@@ -30,9 +30,20 @@ GUILD_ID = os.getenv("GUILD_ID")
 DELAY_SECONDS = float(os.getenv("DELAY_SECONDS", "1"))
 
 BASE_DIR = Path(__file__).resolve().parent
-CSV_FILE = BASE_DIR / "assignments.csv"
+CSV_FILE = BASE_DIR / "wgAllocation.csv"
 LOG_FILE = BASE_DIR / "results.log"
 
+roleDict = {
+    "1492929286716260432": "Agony",
+    "1492929434007769118": "Asterix",
+    "1492929228524490904": "Beans",
+    "1492929455608299521": "Clanker",
+    "1492929483194499293": "eSparkle",
+    "1492929516564250674": "Irn-bru",
+    "1492929739655086293": "Poets Society",
+    "1492929770474832013": "Sigma",
+    "1492929790867669134": "Space bugs",
+}
 
 def validate_env() -> None:
     missing = [name for name, val in (
@@ -57,8 +68,8 @@ def load_assignments() -> list[tuple[str, str]]:
     with CSV_FILE.open("r", encoding="utf-8-sig", newline="") as f:
         reader = csv.DictReader(f)
         headers = {(h or "").strip().lower() for h in (reader.fieldnames or [])}
-        if not {"userid", "roleid"}.issubset(headers):
-            print('assignments.csv must have a header row: "userid,roleid"')
+        if not {"userid", "roleid","name"}.issubset(headers):
+            print('assignments.csv must have a header row: "userid,roleid,name"')
             sys.exit(1)
 
         # Normalize header lookup regardless of casing/spacing in the file.
@@ -67,9 +78,10 @@ def load_assignments() -> list[tuple[str, str]]:
         for row in reader:
             user_id = (row.get(field_map["userid"]) or "").strip()
             role_id = (row.get(field_map["roleid"]) or "").strip()
-            if not user_id or not role_id:
+            name = (row.get(field_map["name"]) or "").strip()
+            if not user_id or not role_id or not name:
                 continue  # skip blank/incomplete rows
-            assignments.append((user_id, role_id))
+            assignments.append((user_id, role_id, name))
 
     return assignments
 
@@ -121,35 +133,35 @@ async def main() -> None:
         success_count = 0
         fail_count = 0
 
-        for i, (user_id, role_id) in enumerate(assignments, start=1):
+        for i, (user_id, role_id, name) in enumerate(assignments, start=1):
             outcome = ""
             try:
                 role = await get_role(int(role_id))
                 if role is None:
-                    outcome = f"{user_id},{role_id} - FAILED (role not found in this server)"
+                    outcome = f"{name},{role_id} - FAILED (role not found in this server)"
                     fail_count += 1
                 elif me.top_role.position <= role.position:
                     outcome = (
-                        f"{user_id},{role_id} - FAILED "
+                        f"{name},{roleDict[role_id]} - FAILED "
                         f'(bot role must be positioned above "{role.name}")'
                     )
                     fail_count += 1
                 else:
                     member = guild.get_member(int(user_id)) or await guild.fetch_member(int(user_id))
                     if role in member.roles:
-                        outcome = f"{user_id},{role_id} - SKIPPED (already had the role)"
+                        outcome = f"{name},{roleDict[role_id]} - SKIPPED (already had the role)"
                     else:
                         await member.add_roles(role, reason="Bulk role assignment script")
-                        outcome = f"{user_id},{role_id} - SUCCESS"
+                        outcome = f"{name},{roleDict[role_id]} - SUCCESS"
                         success_count += 1
             except discord.NotFound:
-                outcome = f"{user_id},{role_id} - FAILED (user not found in this server)"
+                outcome = f"{name},{roleDict[role_id]} - FAILED (user not found in this server)"
                 fail_count += 1
             except discord.Forbidden:
-                outcome = f"{user_id},{role_id} - FAILED (missing permissions)"
+                outcome = f"{name},{roleDict[role_id]} - FAILED (missing permissions)"
                 fail_count += 1
             except Exception as err:  # noqa: BLE001 - want to log any failure and keep going
-                outcome = f"{user_id},{role_id} - FAILED ({err})"
+                outcome = f"{name},{roleDict[role_id]} - FAILED ({err})"
                 fail_count += 1
 
             results.append(outcome)
